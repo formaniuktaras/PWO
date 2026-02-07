@@ -1,0 +1,13 @@
+app_version: "0.1.0"
+
+database:
+  host: "127.0.0.1"
+  port: 5432
+  dbname: "pwo"
+  user: "pwo_user"
+  password: "change_me"
+
+storage_root: "\\\\SERVER\\share\\pwo\\storage"
+templates_root: "\\\\SERVER\\share\\pwo\\templates"
+backups_root: "\\\\SERVER\\share\\pwo\\backups"
+pg_dump_path: "pg_dump"
