@@ -7,10 +7,14 @@ from sqlalchemy import engine_from_config, pool
 
 from app.db.base import Base
 from app.models import entities  # noqa: F401
+from app.services.settings_service import SettingsService
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+settings = SettingsService(SettingsService.resolve_path())
+config.set_main_option("sqlalchemy.url", settings.sqlalchemy_dsn())
 
 target_metadata = Base.metadata
 

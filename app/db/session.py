@@ -11,7 +11,5 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=
 
 def init_engine(settings: SettingsService) -> None:
     global engine
-    db = settings.config.database
-    dsn = f"postgresql+psycopg://{db.user}:{db.password}@{db.host}:{db.port}/{db.dbname}"
-    engine = create_engine(dsn, pool_pre_ping=True)
+    engine = create_engine(settings.sqlalchemy_dsn(), pool_pre_ping=True)
     SessionLocal.configure(bind=engine)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import zipfile
@@ -11,29 +12,61 @@ from app.utils.files import sha256_file
 
 
 class BackupService:
-    def __init__(self, pg_dump_path: str, db_dsn: str, storage_root: str, backups_root: str, app_version: str, schema_version: str):
+    def __init__(
+        self,
+        pg_dump_path: str,
+        db_host: str,
+        db_port: int,
+        db_name: str,
+        db_user: str,
+        db_password: str,
+        storage_root: str,
+        backups_root: str,
+        app_version: str,
+        alembic_revision: str,
+    ):
         self.pg_dump_path = pg_dump_path
-        self.db_dsn = db_dsn
+        self.db_host = db_host
+        self.db_port = db_port
+        self.db_name = db_name
+        self.db_user = db_user
+        self.db_password = db_password
         self.storage_root = Path(storage_root)
         self.backups_root = Path(backups_root)
         self.app_version = app_version
-        self.schema_version = schema_version
+        self.alembic_revision = alembic_revision
 
     def create_backup(self) -> Path:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         work = self.backups_root / f"backup_{ts}"
         work.mkdir(parents=True, exist_ok=True)
         dump_file = work / "database.dump"
-        subprocess.run([self.pg_dump_path, self.db_dsn, "-Fc", "-f", str(dump_file)], check=True)
+
+        env = os.environ.copy()
+        env["PGPASSWORD"] = self.db_password
+        cmd = [
+            self.pg_dump_path,
+            "-Fc",
+            "-f",
+            str(dump_file),
+            "-h",
+            self.db_host,
+            "-p",
+            str(self.db_port),
+            "-U",
+            self.db_user,
+            self.db_name,
+        ]
+        subprocess.run(cmd, check=True, env=env)
 
         storage_copy = work / "storage"
         shutil.copytree(self.storage_root, storage_copy)
 
         files = [p for p in work.rglob("*") if p.is_file()]
         manifest = {
-            "created_at": datetime.now().isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "app_version": self.app_version,
-            "schema_version": self.schema_version,
+            "alembic_revision": self.alembic_revision,
             "files": [{"path": str(p.relative_to(work)), "sha256": sha256_file(p)} for p in files],
         }
         (work / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")

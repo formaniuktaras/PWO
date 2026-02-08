@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
+
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -99,13 +102,26 @@ class BackupExportTab(QWidget):
     def create_backup(self):
         cfg = self.settings.config
         db = cfg.database
-        dsn = f"postgresql://{db.user}:{db.password}@{db.host}:{db.port}/{db.dbname}"
-        svc = BackupService(cfg.pg_dump_path, dsn, cfg.storage_root, cfg.backups_root, cfg.app_version, self.schema_version)
+        svc = BackupService(
+            cfg.pg_dump_path,
+            db.host,
+            db.port,
+            db.dbname,
+            db.user,
+            db.password,
+            cfg.storage_root,
+            cfg.backups_root,
+            cfg.app_version,
+            self.schema_version,
+        )
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             p = svc.create_backup()
             QMessageBox.information(self, "Backup", f"Created: {p}")
         except Exception as e:
             QMessageBox.warning(self, "Backup failed", str(e))
+        finally:
+            QApplication.restoreOverrideCursor()
 
 
 class SettingsDialog(QWidget):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime, date
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
@@ -34,12 +34,24 @@ class EventItemKind(str, enum.Enum):
     GROUP = "group"
 
 
+class AssetState(str, enum.Enum):
+    N_O = "n/o"
+    ON_BALANCE = "on_balance"
+    OFF_BALANCE = "off_balance"
+    WRITTEN_OFF = "written_off"
+
+
 class ValuationKind(str, enum.Enum):
     ACCOUNTING = "accounting"
     ASSESSMENT_ACT = "assessment_act"
     PRICE_LIST = "price_list"
     INITIAL_VALUE_ACT = "initial_value_act"
     RESIDUAL_VALUE_STATEMENT = "residual_value_statement"
+
+
+class EngineType(str, enum.Enum):
+    WORD = "word"
+    EXCEL = "excel"
 
 
 class TimestampVersionMixin:
@@ -104,6 +116,7 @@ class Event(Base, TimestampVersionMixin):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     event_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    __mapper_args__ = {"version_id_col": row_version}
 
 
 class EventUnit(Base):
@@ -121,12 +134,14 @@ class EventItem(Base, TimestampVersionMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
     kind: Mapped[EventItemKind] = mapped_column(Enum(EventItemKind, name="event_item_kind"), nullable=False)
+    state: Mapped[AssetState | None] = mapped_column(Enum(AssetState, name="asset_state"))
     object_id: Mapped[int | None] = mapped_column(ForeignKey("asset_objects.id"))
     nom_id: Mapped[int | None] = mapped_column(ForeignKey("nomenclature.id"))
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), nullable=False)
     unit_id: Mapped[int] = mapped_column(ForeignKey("units.id"), nullable=False)
     qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     note: Mapped[str | None] = mapped_column(Text)
+    __mapper_args__ = {"version_id_col": row_version}
 
     __table_args__ = (
         CheckConstraint(
@@ -142,6 +157,8 @@ class DocType(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    engine_type: Mapped[EngineType] = mapped_column(Enum(EngineType, name="engine_type"), nullable=False, default=EngineType.WORD)
+    template_path: Mapped[str] = mapped_column(String(512), nullable=False)
     extension: Mapped[str] = mapped_column(String(8), nullable=False)
 
 
@@ -164,7 +181,8 @@ class Valuation(Base, TimestampVersionMixin):
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), nullable=False)
     kind: Mapped[ValuationKind] = mapped_column(Enum(ValuationKind, name="valuation_kind"), nullable=False)
-    value_amount: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    value_uah: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    date_effective: Mapped[date | None] = mapped_column(Date)
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"))
 
 
@@ -185,6 +203,7 @@ class AuditLog(Base):
     table_name: Mapped[str] = mapped_column(String(128), nullable=False)
     row_id: Mapped[str] = mapped_column(String(64), nullable=False)
     details: Mapped[str | None] = mapped_column(Text)
+    diff_json: Mapped[str | None] = mapped_column(Text)
 
 
 Index("ix_asset_inv_no_unique_not_null", AssetObject.inv_no, unique=True, postgresql_where=AssetObject.inv_no.is_not(None))

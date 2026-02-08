@@ -18,7 +18,7 @@ class MainWindow(QMainWindow):
         self.user = user
 
         tabs = QTabWidget()
-        tabs.addTab(EventsTab(session_factory), "Events")
+        tabs.addTab(EventsTab(session_factory, settings, user), "Events")
         tabs.addTab(AssetsTab(session_factory), "Assets")
         tabs.addTab(DocumentsTab(session_factory), "Documents")
         tabs.addTab(DictionariesTab(session_factory), "Dictionaries")
