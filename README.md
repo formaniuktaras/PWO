@@ -91,3 +91,48 @@ python -m app.main
 - SQLite не підтримується.
 - Валюта в MVP: UAH.
 - Один `event_item` належить рівно одній службі і одному підрозділу.
+
+
+## 10) Збірка EXE (PyInstaller, Windows, ONEDIR)
+```bat
+build\build.bat
+```
+Альтернатива PowerShell:
+```powershell
+.\build\build.ps1
+```
+
+Що робить скрипт:
+- створює `.venv` (якщо відсутній);
+- встановлює залежності з `requirements.txt`;
+- виконує `pyinstaller pwo.spec --clean`;
+- гарантує наявність `dist\PWO\config.yaml.example`;
+- створює `dist\PWO\config.yaml` (копія example), якщо його нема.
+
+## 11) Розгортання на клієнтських ПК
+1. Скопіюйте всю папку `dist\PWO` на ПК користувача.
+2. Переконайтесь, що поруч з `PWO.exe` є `config.yaml`.
+3. Відредагуйте `config.yaml` (БД, UNC-шляхи, `pg_dump_path`).
+4. Запускайте `PWO.exe` (Python на клієнтському ПК не потрібен).
+
+## 12) Налаштування config.yaml поруч з EXE
+Логіка пошуку конфігу:
+1. `PWO_CONFIG` (абсолютний шлях).
+2. frozen/EXE: `config.yaml` у папці поруч з `PWO.exe`.
+3. dev-режим: `config.yaml` у корені проєкту (поруч з `config.yaml.example`).
+4. fallback: `./config.yaml` (поточна директорія).
+
+Якщо `config.yaml` відсутній при запуску EXE, застосунок автоматично створить його з `config.yaml.example` і попросить заповнити файл.
+
+## 13) pg_dump_path через UNC (рекомендовано)
+Для backup можна вказувати UNC шлях до `pg_dump.exe`, наприклад:
+```yaml
+pg_dump_path: "\\SERVER\PostgreSQL\bin\pg_dump.exe"
+```
+Сервіс backup додає директорію `pg_dump.exe` у `PATH` перед запуском, щоб коректно знаходились потрібні DLL.
+
+## 14) Типові проблеми EXE
+- **`qwindows.dll` missing**: перевірте, що запускаєте саме збірку з `dist\PWO`, а не тільки `PWO.exe`.
+- **`VCRUNTIME*.dll` missing**: встановіть Microsoft Visual C++ Redistributable (x64).
+- **`pg_dump not found`**: перевірте `pg_dump_path`; для UNC вкажіть повний шлях до `pg_dump.exe`.
+- **`config missing`**: переконайтесь, що поруч з `PWO.exe` є `config.yaml.example`; перший старт створює `config.yaml` автоматично.

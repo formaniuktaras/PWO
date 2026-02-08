@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import yaml
@@ -31,7 +32,20 @@ class SettingsService:
 
     @staticmethod
     def resolve_path(default: str = "config.yaml") -> Path:
-        return Path(os.getenv("PWO_CONFIG", default))
+        env_path = os.getenv("PWO_CONFIG")
+        if env_path:
+            resolved = Path(env_path).expanduser()
+            return resolved if resolved.is_absolute() else resolved.resolve()
+
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).resolve().parent / default
+
+        project_root = Path(__file__).resolve().parents[2]
+        dev_path = project_root / default
+        if (project_root / "config.yaml.example").exists():
+            return dev_path
+
+        return Path.cwd() / default
 
     def _load(self) -> AppConfig:
         with self.path.open("r", encoding="utf-8") as f:

@@ -15,7 +15,21 @@ def run() -> int:
     app = QApplication(sys.argv)
     config_path = SettingsService.resolve_path()
     if not config_path.exists():
-        QMessageBox.critical(None, "Config missing", "Create config.yaml from config.yaml.example first.")
+        example_candidates = [
+            config_path.with_name("config.yaml.example"),
+            Path(__file__).resolve().parents[2] / "config.yaml.example",
+        ]
+        example_path = next((candidate for candidate in example_candidates if candidate.exists()), None)
+        if example_path:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(example_path.read_text(encoding="utf-8"), encoding="utf-8")
+            QMessageBox.information(
+                None,
+                "Config created",
+                f"config.yaml was created at {config_path}.\nFill it in and restart the app.",
+            )
+        else:
+            QMessageBox.critical(None, "Config missing", "Create config.yaml from config.yaml.example first.")
         return 1
 
     settings = SettingsService(config_path)

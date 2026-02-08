@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import getpass
-from pathlib import Path
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -12,7 +11,7 @@ from app.services.settings_service import SettingsService
 
 
 def main() -> None:
-    settings = SettingsService(Path("config.yaml"))
+    settings = SettingsService(SettingsService.resolve_path())
     db = settings.config.database
     dsn = f"postgresql+psycopg://{db.user}:{db.password}@{db.host}:{db.port}/{db.dbname}"
     engine = create_engine(dsn)
