@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from sqlalchemy import select
 
 from app.auth.security import hash_password
-from app.models.entities import Event, Role, User
+from app.models.entities import Event, Role, RoleCode, User
 from app.services.backup_service import BackupService
 from app.services.export_service import ExportService
 from app.services.settings_service import SettingsService
@@ -62,8 +62,18 @@ class AdminUsersTab(QWidget):
         password, ok = QInputDialog.getText(self, "User", "Password")
         if not ok or not password:
             return
+        role_value, ok = QInputDialog.getItem(
+            self,
+            "User",
+            "Role",
+            [RoleCode.ADMIN.value, RoleCode.OPERATOR.value, RoleCode.VIEWER.value],
+            editable=False,
+        )
+        if not ok:
+            return
+        selected_role_code = RoleCode(role_value)
         with self.session_factory() as s:
-            role = s.scalar(select(Role).where(Role.code == "Viewer")) or s.scalar(select(Role))
+            role = s.scalar(select(Role).where(Role.code == selected_role_code)) or s.scalar(select(Role))
             s.add(User(username=username, password_hash=hash_password(password), role_id=role.id, is_active=True))
             s.commit()
         self.load()

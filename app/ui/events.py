@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import shutil
 from datetime import date
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.models.entities import (
@@ -60,7 +62,7 @@ class ResidualWizardDialog(QDialog):
         self.service = QComboBox()
         self.doc = QComboBox()
         self.date_effective = QDateEdit()
-        self.date_effective.setDate(date.today())
+        self.date_effective.setDate(QDate.currentDate())
         self.value = QLineEdit()
         self.value.setPlaceholderText("UAH (optional)")
 
@@ -102,6 +104,18 @@ class ResidualWizardDialog(QDialog):
             self.table.setItem(r, 3, qty)
 
     def build_payload(self):
+        raw_value_uah = self.value.text().strip()
+        value_uah = None
+        if raw_value_uah:
+            try:
+                value_uah = Decimal(raw_value_uah.replace(",", ".")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            except InvalidOperation:
+                QMessageBox.warning(self, "Residual", "Value UAH must be a valid number")
+                return None
+            if value_uah < Decimal("0.00"):
+                QMessageBox.warning(self, "Residual", "Value UAH must be >= 0")
+                return None
+
         links = []
         for r in range(self.table.rowCount()):
             checked = self.table.cellWidget(r, 0).isChecked()
@@ -116,7 +130,7 @@ class ResidualWizardDialog(QDialog):
         return {
             "service_id": self.service.currentData(),
             "document_id": self.doc.currentData(),
-            "value_uah": self.value.text().strip() or None,
+            "value_uah": value_uah,
             "date_effective": self.date_effective.date().toPython(),
             "links": links,
         }
@@ -133,7 +147,7 @@ class EventEditorDialog(QDialog):
 
         self.title_edit = QLineEdit()
         self.date_edit = QDateEdit()
-        self.date_edit.setDate(date.today())
+        self.date_edit.setDate(QDate.currentDate())
         self.status_edit = QLineEdit("draft")
         self.version_label = QLabel("-")
 
@@ -212,7 +226,7 @@ class EventEditorDialog(QDialog):
         with self.session_factory() as s:
             e = s.get(Event, self.event_id)
             self.title_edit.setText(e.title)
-            self.date_edit.setDate(e.event_date)
+            self.date_edit.setDate(QDate(e.event_date.year, e.event_date.month, e.event_date.day))
             self.status_edit.setText(e.status)
             self.version_label.setText(str(e.row_version))
 
@@ -272,7 +286,12 @@ class EventEditorDialog(QDialog):
                 return
             unit_id = int(val.split(" - ")[0])
             s.add(EventUnit(event_id=self.event_id, unit_id=unit_id, is_primary=False))
-            s.commit()
+            try:
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+                QMessageBox.warning(self, "Unit", "Цей підрозділ вже додано до події")
+                return
         self.load()
 
     def delete_selected_unit(self):
@@ -403,6 +422,8 @@ class EventEditorDialog(QDialog):
             if not dlg.exec():
                 return
             payload = dlg.build_payload()
+            if payload is None:
+                return
             if not payload["document_id"]:
                 QMessageBox.warning(self, "Residual", "Document is required")
                 return
@@ -474,7 +495,7 @@ class EventsTab(QWidget):
         self.search = QLineEdit(); self.search.setPlaceholderText("Search events")
         self.status_filter = QLineEdit(); self.status_filter.setPlaceholderText("Status")
         self.unit_filter = QLineEdit(); self.unit_filter.setPlaceholderText("Unit ID")
-        self.date_from = QDateEdit(); self.date_to = QDateEdit(); self.date_from.setDate(date(2000, 1, 1)); self.date_to.setDate(date.today())
+        self.date_from = QDateEdit(); self.date_to = QDateEdit(); self.date_from.setDate(QDate(2000, 1, 1)); self.date_to.setDate(QDate.currentDate())
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["ID", "Title", "Date", "Status"])

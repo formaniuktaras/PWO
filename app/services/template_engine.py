@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+from datetime import date
 from pathlib import Path
 
 from docx import Document as DocxDocument
@@ -35,14 +36,18 @@ class TemplateEngine:
         if not template_file.exists():
             raise FileNotFoundError(f"Template missing: {template_file}")
 
-        reg_date = context.get("REG_DATE", event.event_date.isoformat())
+        doc_date_str = context.get("DOC_DATE")
+        reg_date_str = context.get("REG_DATE")
+        doc_date = date.fromisoformat(doc_date_str) if doc_date_str else event.event_date
+        reg_date = date.fromisoformat(reg_date_str) if reg_date_str else date.today()
+
         event_base = self.storage.ensure_event_dirs(event_id)
         filename = self.storage.build_doc_name(
-            doc_date=event.event_date,
+            doc_date=doc_date,
             primary_unit_code=primary_code,
             doc_type=doc_type.code,
             doc_no=context.get("DOC_NO", "draft"),
-            reg_date=event.event_date.fromisoformat(reg_date) if isinstance(reg_date, str) else event.event_date,
+            reg_date=reg_date,
             ext=doc_type.extension,
         )
         out_file = event_base / "documents" / filename
@@ -60,8 +65,8 @@ class TemplateEngine:
             event_id=event_id,
             doc_type_id=doc_type.id,
             doc_no=context.get("DOC_NO"),
-            doc_date=event.event_date,
-            reg_date=event.event_date,
+            doc_date=doc_date,
+            reg_date=reg_date,
             file_path=rel,
             sha256=self.storage.hash(out_file),
         )
