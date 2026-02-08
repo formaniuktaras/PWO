@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QComboBox,
     QFileDialog,
-    QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -13,6 +12,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QComboBox,
 )
 from sqlalchemy import select
 
@@ -22,22 +22,23 @@ from app.services.import_service import ImportService
 
 class DictionariesTab(QWidget):
     MODELS = {
-        "Units": (Unit, ["id", "code", "short_name", "full_name"]),
+        "Units": (Unit, ["id", "code", "short_name", "full_name", "parent_id"]),
         "Services": (Service, ["id", "code", "name"]),
         "Nomenclature": (Nomenclature, ["id", "code", "name", "unit_measure"]),
-        "DocTypes": (DocType, ["id", "code", "name", "extension"]),
+        "DocTypes": (DocType, ["id", "code", "name", "engine_type", "template_path", "extension"]),
     }
 
     def __init__(self, session_factory):
         super().__init__()
         self.session_factory = session_factory
+
         self.selector = QComboBox()
         self.selector.addItems(self.MODELS.keys())
-        self.table = QTableWidget(0, 1)
-        self.import_btn = QPushButton("Import xlsx/xlsm")
-        self.import_btn.clicked.connect(self.import_xlsx)
+        self.table = QTableWidget(0, 4)
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.load)
+        self.import_btn = QPushButton("Import from xlsx/xlsm")
+        self.import_btn.clicked.connect(self.import_xlsx)
 
         top = QHBoxLayout()
         top.addWidget(QLabel("Dictionary:"))
@@ -60,29 +61,32 @@ class DictionariesTab(QWidget):
             self.table.setRowCount(len(rows))
             for r, obj in enumerate(rows):
                 for c, col in enumerate(cols):
-                    self.table.setItem(r, c, QTableWidgetItem(str(getattr(obj, col, ""))))
+                    val = getattr(obj, col, "")
+                    if hasattr(val, "value"):
+                        val = val.value
+                    self.table.setItem(r, c, QTableWidgetItem(str(val)))
 
     def import_xlsx(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select Excel", filter="Excel (*.xlsx *.xlsm)")
         if not path:
             return
         target_key = self.selector.currentText().lower()
-        target = "units" if target_key == "units" else "services" if target_key == "services" else "nomenclature"
-        if target_key == "doctypes":
-            QMessageBox.information(self, "Import", "Import for doc types is TODO in MVP.")
-            return
+        target = "doc_types" if target_key == "doctypes" else target_key
         with self.session_factory() as s:
             svc = ImportService(s)
-            preview = svc.preview(path)
+            preview = svc.preview(path, limit=20)
             if preview:
-                QMessageBox.information(self, "Preview", str(preview[:3]))
-            mapping = {
-                "code": "code",
-                "name": "name",
-                "short_name": "short_name",
-                "full_name": "full_name",
-                "unit_measure": "unit_measure",
-            }
+                QMessageBox.information(self, "Preview (20)", str(preview[:3]))
+            mapping = svc.suggest_mapping(path, target)
+            if not mapping:
+                QMessageBox.warning(self, "Import", "No matching headers found")
+                return
+            override, ok = QInputDialog.getText(self, "Mapping", f"Auto mapping:\n{mapping}\n\nEnter overrides src:dest,src:dest")
+            if ok and override.strip():
+                for part in override.split(","):
+                    if ":" in part:
+                        src, dest = [x.strip() for x in part.split(":", 1)]
+                        mapping[src] = dest
             count = svc.import_rows(path, target, mapping)
             s.commit()
         QMessageBox.information(self, "Done", f"Imported/updated rows: {count}")

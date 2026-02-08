@@ -13,7 +13,7 @@ from app.ui.main_window import MainWindow
 
 def run() -> int:
     app = QApplication(sys.argv)
-    config_path = Path("config.yaml")
+    config_path = SettingsService.resolve_path()
     if not config_path.exists():
         QMessageBox.critical(None, "Config missing", "Create config.yaml from config.yaml.example first.")
         return 1
