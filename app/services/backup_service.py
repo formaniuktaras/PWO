@@ -44,6 +44,7 @@ class BackupService:
 
         env = os.environ.copy()
         env["PGPASSWORD"] = self.db_password
+        env["PATH"] = f"{Path(self.pg_dump_path).parent};{env.get('PATH', '')}"
         cmd = [
             self.pg_dump_path,
             "-Fc",
