@@ -17,8 +17,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -57,7 +58,13 @@ class EngineType(str, enum.Enum):
 class TimestampVersionMixin:
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    row_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    row_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+
+    # Use declared_attr so each mapped subclass resolves its own row_version column
+    # at mapper configuration time (avoids NameError from class-body bare name lookup).
+    @declared_attr.directive
+    def __mapper_args__(cls) -> dict[str, object]:
+        return {"version_id_col": cls.row_version}
 
 
 class Role(Base):
@@ -116,7 +123,6 @@ class Event(Base, TimestampVersionMixin):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     event_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
-    __mapper_args__ = {"version_id_col": row_version}
 
 
 class EventUnit(Base):
@@ -141,7 +147,6 @@ class EventItem(Base, TimestampVersionMixin):
     unit_id: Mapped[int] = mapped_column(ForeignKey("units.id"), nullable=False)
     qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     note: Mapped[str | None] = mapped_column(Text)
-    __mapper_args__ = {"version_id_col": row_version}
 
     __table_args__ = (
         CheckConstraint(
