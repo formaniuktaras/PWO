@@ -21,9 +21,9 @@ def upgrade() -> None:
     valuation_kind = sa.Enum(
         "accounting", "assessment_act", "price_list", "initial_value_act", "residual_value_statement", name="valuation_kind"
     )
-    role_code.create(op.get_bind())
-    event_item_kind.create(op.get_bind())
-    valuation_kind.create(op.get_bind())
+    role_code.create(op.get_bind(), checkfirst=True)
+    event_item_kind.create(op.get_bind(), checkfirst=True)
+    valuation_kind.create(op.get_bind(), checkfirst=True)
 
     op.create_table("roles", sa.Column("id", sa.Integer(), primary_key=True), sa.Column("code", role_code, nullable=False, unique=True))
 
@@ -211,6 +211,6 @@ def downgrade() -> None:
     op.drop_table("units")
     op.drop_table("users")
     op.drop_table("roles")
-    sa.Enum(name="valuation_kind").drop(op.get_bind(), checkfirst=False)
-    sa.Enum(name="event_item_kind").drop(op.get_bind(), checkfirst=False)
-    sa.Enum(name="role_code").drop(op.get_bind(), checkfirst=False)
+    sa.Enum(name="valuation_kind").drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name="event_item_kind").drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name="role_code").drop(op.get_bind(), checkfirst=True)

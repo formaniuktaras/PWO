@@ -12,9 +12,7 @@ from app.services.settings_service import SettingsService
 
 def main() -> None:
     settings = SettingsService(SettingsService.resolve_path())
-    db = settings.config.database
-    dsn = f"postgresql+psycopg://{db.user}:{db.password}@{db.host}:{db.port}/{db.dbname}"
-    engine = create_engine(dsn)
+    engine = create_engine(settings.sqlalchemy_dsn())
     username = input("Admin username: ").strip()
     password = getpass.getpass("Admin password: ")
 
