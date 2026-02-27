@@ -1,138 +1,380 @@
-# PWO (PySide6 + PostgreSQL)
+# PWO — Windows desktop MVP (PySide6 + PostgreSQL + Alembic)
 
-Windows-only desktop MVP for multi-user asset/event workflow with centralized PostgreSQL and shared file storage (UNC path).
+PWO — це багатокористувацький desktop-застосунок для обліку подій/активів і формування документів, який працює на Windows, використовує PostgreSQL як централізовану БД та спільне файлове сховище (локальне або UNC).
 
-## Архітектура (що де лежить)
-- `app/services/settings_service.py` — єдине джерело конфігурації (`config.yaml`, optional `PWO_CONFIG`, `PWO_DB_PASSWORD`).
-- `app/models/entities.py` — SQLAlchemy models + constraints + optimistic locking (`row_version`).
-- `app/ui/` — PySide6 UI (login, events, dictionaries, backup/export).
-- `migrations/` — Alembic. `migrations/env.py` читає той самий `config.yaml`, що й застосунок.
+## Ключові можливості
+- Авторизація користувачів із ролями (`Admin`, `Operator`, `Viewer`).
+- Робота з подіями, об’єктами, групами, документами та оцінками.
+- Імпорт довідників (xlsx/xlsm), експорт пакетів подій.
+- Резервне копіювання (БД + файли) через `pg_dump`.
+- Збірка standalone EXE (PyInstaller, onedir).
 
-## 1) PostgreSQL на робочому ПК (DB server) — для першокласника
+---
 
-### 1.1 Увімкнути доступ по LAN
-У `postgresql.conf`:
-```ini
+## Архітектура та структура проєкту
+
+```text
+app/
+  auth/                  # security, auth service
+  db/                    # ініціалізація SQLAlchemy engine/session
+  models/                # SQLAlchemy-моделі та enum-и
+  services/              # бізнес/інфра сервіси (settings, backup, storage...)
+  ui/                    # PySide6 UI
+  main.py                # точка входу desktop app
+
+migrations/
+  env.py                 # Alembic env (читає той самий config.yaml)
+  versions/              # ревізії БД
+
+scripts/
+  init_storage.py        # створення storage/templates/backups директорій
+  seed_admin.py          # створення/оновлення admin-користувача
+
+build/
+  build.bat / build.ps1  # збірка EXE
+
+config.yaml.example      # приклад конфігу
+README.md                # цей документ
+```
+
+---
+
+## Вимоги
+
+### ОС і софт
+- Windows 10/11 або Windows Server (для DB-сервера).
+- Python 3.11+ (рекомендовано).
+- PostgreSQL 14+ (рекомендовано).
+- PowerShell 5.1+ або PowerShell 7+.
+
+### Мережа
+- Клієнтські ПК мають бачити PostgreSQL-хост по TCP 5432.
+- Для мережевих каталогів (`\\server\share\...`) потрібні права читання/запису.
+
+### UNC/Storage
+- Шляхи `storage_root`, `templates_root`, `backups_root` мають існувати або бути доступними для створення.
+- Користувач, під яким запускається PWO/EXE, повинен мати доступ до цих шляхів.
+
+---
+
+## Quick Start (чистий запуск з нуля, Windows PowerShell)
+
+> Усі команди нижче — PowerShell-safe.
+
+### 1) Клон/перехід у репозиторій
+```powershell
+cd D:\work\PWO
+```
+
+### 2) Створити venv і встановити залежності
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+py -m pip install --upgrade pip
+py -m pip install -r requirements.txt
+```
+
+### 3) Створити `config.yaml`
+```powershell
+Copy-Item .\config.yaml.example .\config.yaml
+notepad .\config.yaml
+```
+
+### 4) Підготувати PostgreSQL (на DB-сервері)
+```sql
+CREATE USER pwo_user WITH PASSWORD 'ChangeMe_Strong!';
+CREATE DATABASE pwo OWNER pwo_user;
+```
+
+### 5) Застосувати міграції
+```powershell
+py -m alembic upgrade head
+```
+
+### 6) Ініціалізувати файлове сховище
+```powershell
+py -m scripts.init_storage
+```
+
+### 7) Створити/оновити admin
+```powershell
+py -m scripts.seed_admin
+```
+
+### 8) Запустити застосунок
+```powershell
+py -m app.main
+```
+
+---
+
+## `config.yaml`: детально по кожному полю
+
+Приклад:
+
+```yaml
+app_version: "0.1.0"
+
+database:
+  host: "127.0.0.1"
+  port: 5432
+  dbname: "pwo"
+  user: "pwo_user"
+  password: "Strong@Pass:2026#local"
+
+storage_root: "D:/PWO/storage"
+templates_root: "D:/PWO/templates"
+backups_root: "D:/PWO/backups"
+
+pg_dump_path: "C:/Program Files/PostgreSQL/16/bin/pg_dump.exe"
+```
+
+### Пояснення
+- `database.host` — **тільки host/IP**, наприклад `127.0.0.1` або `192.168.1.50`.
+  - ❗ Не можна вказувати `user@host` (наприклад `rk0205@127.0.0.1`) — це зламає підключення.
+- `database.port` — порт PostgreSQL, зазвичай `5432`.
+- `database.dbname` — назва БД.
+- `database.user` / `database.password` — облікові дані PostgreSQL.
+- `storage_root` — корінь для файлів подій.
+- `templates_root` — шаблони документів.
+- `backups_root` — куди складати бекапи.
+- `pg_dump_path` — повний шлях до `pg_dump.exe` або просто `pg_dump`, якщо він у `PATH`.
+
+### Приклад для LAN PostgreSQL + UNC
+```yaml
+database:
+  host: "192.168.1.10"
+  port: 5432
+  dbname: "pwo"
+  user: "pwo_user"
+  password: "Strong#Pass@2026"
+
+storage_root: "\\\\FS01\\pwo\\storage"
+templates_root: "\\\\FS01\\pwo\\templates"
+backups_root: "\\\\FS01\\pwo\\backups"
+
+pg_dump_path: "\\\\DB01\\PostgreSQL\\bin\\pg_dump.exe"
+```
+
+---
+
+## Порядок резолву конфіга (`config.yaml`)
+
+Застосунок та скрипти шукають конфіг у такому порядку:
+1. `PWO_CONFIG` (якщо задано).
+2. Для EXE (frozen): `config.yaml` поруч із `PWO.exe`.
+3. Для dev-режиму: `config.yaml` у корені проєкту (де є `config.yaml.example`).
+4. Fallback: `./config.yaml` у поточній директорії.
+
+Додатково:
+- Якщо `PWO_DB_PASSWORD` задано в env, він **перекриває** пароль із `config.yaml`.
+
+---
+
+## PostgreSQL у LAN: обов’язкові налаштування
+
+### 1) `postgresql.conf`
+```conf
 listen_addresses = '*'
 port = 5432
 ```
 
-У `pg_hba.conf` додайте LAN-підмережу (приклад 192.168.1.x):
+### 2) `pg_hba.conf`
+Додайте доступ для вашої підмережі:
 ```conf
 host    all    all    192.168.1.0/24    scram-sha-256
 ```
 
-Потім перезапустіть службу PostgreSQL (Services.msc).
+### 3) Windows Firewall
+Створіть inbound rule для TCP 5432 на DB-сервері.
 
-### 1.2 Відкрити firewall
-На DB-сервері Windows відкрийте TCP 5432 у Windows Defender Firewall (Inbound rule).
-
-### 1.3 Створити користувача/БД
-```sql
-CREATE USER pwo_user WITH PASSWORD 'change_me';
-CREATE DATABASE pwo OWNER pwo_user;
+### 4) Перезапуск служби PostgreSQL
+Через `services.msc` або:
+```powershell
+Restart-Service postgresql-x64-16
 ```
 
-## 2) Налаштувати `config.yaml`
-```bash
-copy config.yaml.example config.yaml
-```
-Заповніть:
-- `database.host` = IP DB-сервера (наприклад `192.168.1.10`)
-- `storage_root/templates_root/backups_root` = UNC шляхи (наприклад `\\DB-PC\pwo\storage`)
-- `pg_dump_path` = шлях до `pg_dump.exe` (або `pg_dump`, якщо в PATH)
+---
 
-## 3) Встановлення
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+## Troubleshooting (реальні польові проблеми)
 
-## 4) Міграції
-Alembic використовує той самий config, що app:
-```bash
-alembic upgrade head
+### 1) `FileNotFoundError: ... config.yaml`
+**Симптом:** застосунок/скрипт падає, не знаходить `config.yaml`.
+
+**Причина:**
+- файл відсутній;
+- файл названо як `config.yaml.txt`;
+- запуск із неочікуваної директорії;
+- `PWO_CONFIG` вказує на неіснуючий шлях.
+
+**Діагностика:**
+```powershell
+Get-ChildItem .\config* 
+$env:PWO_CONFIG
 ```
 
-За потреби інший config-файл:
-```bash
-set PWO_CONFIG=D:\pwo\config.yaml
-alembic upgrade head
+**Фікс:**
+```powershell
+Copy-Item .\config.yaml.example .\config.yaml
+# перевірте, що розширення саме .yaml
 ```
 
-## 5) Ініціалізація
-```bash
-python scripts/init_storage.py
-python scripts/seed_admin.py
+---
+
+### 2) `ModuleNotFoundError: No module named 'app'` (для `seed_admin.py`)
+**Симптом:** помилка імпорту при запуску скрипта.
+
+**Причина:** запуск напряму `python scripts/seed_admin.py` з директорії, де PYTHONPATH не включає корінь проєкту.
+
+**Діагностика:**
+```powershell
+Get-Location
 ```
 
-## 6) Запуск
-```bash
-python -m app.main
+**Фікс (правильний запуск):**
+```powershell
+py -m scripts.seed_admin
+py -m scripts.init_storage
+py -m alembic upgrade head
 ```
 
-## 7) MVP сценарії
-- login
-- events CRUD + units/items/documents/valuations
-- residual wizard (`residual_value_statement` + `valuation_links` з partial qty)
-- generate template document (docx/xlsx; xlsm keep_vba; docm safe copy)
-- import dictionaries from xlsx/xlsm (auto mapping + override)
-- export event package (`event.json`, `items.csv`, docs)
-- full backup (`pg_dump -Fc` + storage + `manifest.json` з `alembic_revision`)
+---
 
-## 8) Типові помилки
-- **`could not connect to server`**: перевірте `listen_addresses`, `pg_hba.conf`, firewall 5432.
-- **`password authentication failed`**: перевірте `database.user/password` або `PWO_DB_PASSWORD`.
-- **`Template missing`**: перевірте `doc_types.template_path` і доступність UNC.
-- **`Conflict: record changed by another user`**: відкрийте подію повторно (optimistic locking).
+### 3) `failed to resolve host 'rk0205@127.0.0.1'`
+**Симптом:** PostgreSQL-клієнт не може зарезолвити host.
 
-## 9) Примітки
-- SQLite не підтримується.
-- Валюта в MVP: UAH.
-- Один `event_item` належить рівно одній службі і одному підрозділу.
+**Причина:** у `database.host` помилково записано `user@host` замість чистого host.
 
-
-## 10) Збірка EXE (PyInstaller, Windows, ONEDIR)
-```bat
-build\build.bat
+**Діагностика:**
+```powershell
+Get-Content .\config.yaml
 ```
-Альтернатива PowerShell:
+
+**Фікс:**
+- `database.host: "127.0.0.1"`
+- `database.user: "rk0205"`
+
+---
+
+### 4) `password authentication failed`
+**Симптом:** логін до БД не проходить.
+
+**Причина:** неправильний пароль/користувач у `config.yaml` або перевизначення через `PWO_DB_PASSWORD`.
+
+**Діагностика:**
+```powershell
+$env:PWO_DB_PASSWORD
+py -c "from app.services.settings_service import SettingsService; s=SettingsService(SettingsService.resolve_path()); print(s.sqlalchemy_dsn(with_password=False))"
+```
+
+**Фікс:**
+- звірити `database.user/password` з PostgreSQL;
+- прибрати/оновити `PWO_DB_PASSWORD`, якщо він застарілий.
+
+---
+
+### 5) `relation "roles" does not exist`
+**Симптом:** seed/admin або app звертається до таблиці, якої нема.
+
+**Причина:** міграції не застосовані до фактичної БД.
+
+**Діагностика:**
+```powershell
+py -m alembic current
+py -m alembic heads
+```
+
+**Фікс:**
+```powershell
+py -m alembic upgrade head
+```
+
+---
+
+### 6) `DuplicateObject: type "role_code" already exists` під час `alembic upgrade head`
+**Симптом:** падіння initial migration на enum типі.
+
+**Причина:** enum був створений раніше (частково застосована міграція/ручні зміни), а міграція намагалася створити його повторно.
+
+**Фікс у проєкті:** initial migration створює enum-и з `checkfirst=True`, що робить bootstrap більш толерантним до типових dev-сценаріїв.
+
+**Діагностика/повторний запуск:**
+```powershell
+py -m alembic upgrade head
+```
+
+---
+
+### 7) Помилки через вставку Python-коду напряму в PowerShell
+**Симптом:** parser error у PS на Python-синтаксисі.
+
+**Причина:** Python вираз вставлено без `py -c` або heredoc.
+
+**Фікс (PowerShell-safe):**
+```powershell
+py -c "print('ok')"
+```
+або
+```powershell
+@'
+print("ok")
+'@ | py -
+```
+
+---
+
+## Build & Deploy EXE
+
+### Збірка
 ```powershell
 .\build\build.ps1
 ```
-
-Що робить скрипт:
-- створює `.venv` (якщо відсутній);
-- встановлює залежності з `requirements.txt`;
-- виконує `pyinstaller pwo.spec --clean`;
-- гарантує наявність `dist\PWO\config.yaml.example`;
-- створює `dist\PWO\config.yaml` (копія example), якщо його нема.
-
-## 11) Розгортання на клієнтських ПК
-1. Скопіюйте всю папку `dist\PWO` на ПК користувача.
-2. Переконайтесь, що поруч з `PWO.exe` є `config.yaml`.
-3. Відредагуйте `config.yaml` (БД, UNC-шляхи, `pg_dump_path`).
-4. Запускайте `PWO.exe` (Python на клієнтському ПК не потрібен).
-
-## 12) Налаштування config.yaml поруч з EXE
-Логіка пошуку конфігу:
-1. `PWO_CONFIG` (абсолютний шлях).
-2. frozen/EXE: `config.yaml` у папці поруч з `PWO.exe`.
-3. dev-режим: `config.yaml` у корені проєкту (поруч з `config.yaml.example`).
-4. fallback: `./config.yaml` (поточна директорія).
-
-Якщо `config.yaml` відсутній при запуску EXE, застосунок автоматично створить його з `config.yaml.example` і попросить заповнити файл.
-
-## 13) pg_dump_path через UNC (рекомендовано)
-Для backup можна вказувати UNC шлях до `pg_dump.exe`, наприклад:
-```yaml
-pg_dump_path: "\\SERVER\PostgreSQL\bin\pg_dump.exe"
+або
+```bat
+build\build.bat
 ```
-Сервіс backup додає директорію `pg_dump.exe` у `PATH` перед запуском, щоб коректно знаходились потрібні DLL.
 
-## 14) Типові проблеми EXE
-- **`qwindows.dll` missing**: перевірте, що запускаєте саме збірку з `dist\PWO`, а не тільки `PWO.exe`.
-- **`VCRUNTIME*.dll` missing**: встановіть Microsoft Visual C++ Redistributable (x64).
-- **`pg_dump not found`**: перевірте `pg_dump_path`; для UNC вкажіть повний шлях до `pg_dump.exe`.
-- **`config missing`**: переконайтесь, що поруч з `PWO.exe` є `config.yaml.example`; перший старт створює `config.yaml` автоматично.
+### Що має бути у `dist\PWO`
+- `PWO.exe`
+- Qt/PySide runtime файли (папки/ dll)
+- `config.yaml.example`
+- `config.yaml` (створюється скриптом, якщо відсутній)
+
+### Розгортання на клієнтських ПК
+1. Скопіювати всю папку `dist\PWO`.
+2. Відредагувати `config.yaml` під оточення клієнта.
+3. Перевірити доступ до БД і UNC шляхів.
+4. Запустити `PWO.exe`.
+
+---
+
+## Smoke-test checklist після розгортання
+
+1. `py -m alembic current` показує актуальну ревізію.
+2. `py -m scripts.seed_admin` завершується `Admin user ready`.
+3. Логін у застосунку працює.
+4. Створення тестової події проходить без помилок.
+5. Генерація документа з шаблону працює.
+6. Backup створює архів у `backups_root`.
+
+---
+
+## FAQ
+
+**Q: Чи можна запускати без PostgreSQL (SQLite)?**
+A: Ні, у MVP підтримується лише PostgreSQL.
+
+**Q: Що робити, якщо пароль БД містить `@`, `:`, `/`, `#`, `%`?**
+A: Це підтримується; DSN формується безпечно через SQLAlchemy `URL.create(...)`.
+
+**Q: Чому скрипти краще запускати через `py -m ...`?**
+A: Щоб коректно резолвились імпорти модуля `app` з кореня проєкту.
+
+---
+
+## Що змінено (changelog)
+
+- Виправлено формування DSN: замість ручної конкатенації використовується безпечний `SQLAlchemy URL.create(...)`.
+- Уніфіковано підключення `scripts/seed_admin.py` із загальним механізмом конфіг/DSN.
+- У `0001_initial` додано `checkfirst=True` для створення/видалення enum-типів, щоб уникати падінь на `role_code already exists` у типових dev/bootstrap сценаріях.
+- README повністю переписано в production-like формат з детальним troubleshooting і PowerShell-safe командами.

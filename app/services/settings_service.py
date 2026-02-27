@@ -6,6 +6,7 @@ from pathlib import Path
 
 import yaml
 from pydantic import BaseModel
+from sqlalchemy import URL
 
 
 class DBConfig(BaseModel):
@@ -63,4 +64,11 @@ class SettingsService:
     def sqlalchemy_dsn(self, *, driver: str = "postgresql+psycopg", with_password: bool = True) -> str:
         db = self.config.database
         password = db.password if with_password else "***"
-        return f"{driver}://{db.user}:{password}@{db.host}:{db.port}/{db.dbname}"
+        return URL.create(
+            drivername=driver,
+            username=db.user,
+            password=password,
+            host=db.host,
+            port=db.port,
+            database=db.dbname,
+        ).render_as_string(hide_password=not with_password)
